@@ -18,19 +18,20 @@
 
 别忘了顺序要和摆药单一致。
 
+床号有可能含有非数字：cast(regexp_replace(出院病床, '[^0-9]', '') as numeric)
 
 */
 select * from (
 select * from (
 --计算实际换页标识。
-select zz.科室, zz.床号, zz.住院号, zz.姓名, zz.服药日期, zz.服药时间, zz.医嘱, zz.规格, zz.用法, zz.执行频次, zz.频率次数, zz.用量, zz.医生嘱托, zz.床号0, zz.病人id, zz.首次
-, zz.病人id || '/' || to_char(zz.日期, 'yyyy-mm-dd') || '/' || zz.匹配 || '/' || decode(zz.医生嘱托, null, 'null', '', '空字符串', zz.医生嘱托) || '/' || trunc(zz.该药袋第几种药 / 6) as 换页标识, zz.药品id
+select zz.科室, zz.床号, zz.住院号, zz.姓名, zz.服药日期, zz.服药时间, zz.医嘱, zz.规格, zz.用法, zz.执行频次, zz.频率次数, zz.用量, zz.医生嘱托, zz.床号0, zz.病人id, zz.首次, zz.嘱托换页
+, zz.病人id || '/' || to_char(zz.日期, 'yyyy-mm-dd') || '/' || zz.匹配 || '/' || zz.嘱托换页 || '/' || trunc(zz.该药袋第几种药 / 6) as 换页标识, zz.药品id
 , zz.匹配 from (
 --计算原本药袋有多少种药。
 select ww.科室, ww.床号, ww.住院号, ww.姓名, ww.服药日期, ww.服药时间, ww.医嘱, ww.规格, ww.用法, ww.执行频次, ww.频率次数, ww.用量, ww.医生嘱托, ww.床号0, ww.病人id, ww.首次
-, ww.药品id
-, ww.日期, ww.匹配, row_number() over(partition by ww.床号0, ww.病人id, to_char(ww.日期, 'yyyy-mm-dd'), ww.匹配
- order by ww.床号0 asc, ww.病人id asc, to_char(ww.日期, 'yyyy-mm-dd') asc, ww.匹配 desc, ww.药品id asc) as 该药袋第几种药 from (
+, ww.药品id, case when ww.医生嘱托 is not null then ww.药品id || ww.医生嘱托 else '' end as 嘱托换页
+, ww.日期, ww.匹配, row_number() over(partition by ww.床号0, ww.病人id, to_char(ww.日期, 'yyyy-mm-dd'), case when ww.医生嘱托 is not null then ww.药品id || ww.医生嘱托 else '' end, ww.匹配
+ order by ww.床号0 asc, ww.病人id asc, to_char(ww.日期, 'yyyy-mm-dd') asc, case when ww.医生嘱托 is not null then ww.药品id || ww.医生嘱托 else '' end, ww.匹配 desc, ww.药品id asc) as 该药袋第几种药 from (
 --★★★长嘱必定打印药袋★★★
 select * from (
 select 
@@ -39,11 +40,11 @@ select
   , RPAD('服药日期: ' || to_char(temp_origin_continuous.日期, 'yyyy-mm-dd'), 30, ' ') as 服药日期, '服药时间: ' || drugbag_rec.时点 as 服药时间
   , temp_origin_continuous.医嘱, temp_origin_continuous.规格, temp_origin_continuous.用法, temp_origin_continuous.执行频次, temp_origin_continuous.频率次数
   , temp_origin_continuous.用量, temp_origin_continuous.医生嘱托
-  , temp_origin_continuous.床号 as 床号0, temp_origin_continuous.病人id, temp_origin_continuous.日期, drugbag_rec.匹配, drugbag_rec.首次, temp_origin_continuous.药品id
+  , cast(regexp_replace(temp_origin_continuous.床号, '[^0-9]', '') as numeric) as 床号0, temp_origin_continuous.病人id, temp_origin_continuous.日期, drugbag_rec.匹配, drugbag_rec.首次, temp_origin_continuous.药品id
   , temp_origin_continuous.开始执行时间
 from (
 --源数据集
-select distinct i.规格, a.库房id, a.药品id, a.医嘱id, zl_to_number(e.出院病床) as 床号, e.病人id, e.主页id, NVL(h.名称, g.名称) as 医嘱
+select distinct i.规格, a.库房id, a.药品id, a.医嘱id, e.出院病床 as 床号, e.病人id, e.主页id, NVL(h.名称, g.名称) as 医嘱
   , RTRIM(to_char(b.单次用量/d.剂量系数,'fm990.99999'), '.')||d.住院单位 as 用量,a.用法
   , c.首次时间 as 日期, b.执行频次, b.频率次数, b.首日数次, f.名称 as 科室, b.姓名||decode(b.婴儿,0,'','【婴】') as 姓名, a.年龄, e.住院号, b.医生嘱托, b.开始执行时间
   from 药品收发记录 a,病人医嘱记录 b ,药品规格 d,病案主页 e,部门表 f,病人医嘱发送 c, 收费项目目录 g, 收费项目别名 h, 药品目录 i
@@ -102,11 +103,11 @@ select
   , RPAD('服药日期: ' || to_char(temp_origin_temporary.日期, 'yyyy-mm-dd'), 30, ' ') as 服药日期, '服药时间: ' || drugbag_rec.时点 as 服药时间
   , temp_origin_temporary.医嘱, temp_origin_temporary.规格, temp_origin_temporary.用法, temp_origin_temporary.执行频次, temp_origin_temporary.频率次数
   , temp_origin_temporary.用量, temp_origin_temporary.医生嘱托
-  , temp_origin_temporary.床号 as 床号0, temp_origin_temporary.病人id, temp_origin_temporary.日期, drugbag_rec.匹配, drugbag_rec.首次, temp_origin_temporary.药品id
+  , cast(regexp_replace(temp_origin_temporary.床号, '[^0-9]', '') as numeric) as 床号0, temp_origin_temporary.病人id, temp_origin_temporary.日期, drugbag_rec.匹配, drugbag_rec.首次, temp_origin_temporary.药品id
   , temp_origin_temporary.开始执行时间
 from (
 --源数据集
-select distinct i.规格, a.库房id, a.药品id, a.医嘱id, zl_to_number(e.出院病床) as 床号, e.病人id, e.主页id, NVL(h.名称, g.名称) as 医嘱
+select distinct i.规格, a.库房id, a.药品id, a.医嘱id, e.出院病床 as 床号, e.病人id, e.主页id, NVL(h.名称, g.名称) as 医嘱
   , RTRIM(to_char(b.单次用量/d.剂量系数,'fm990.99999'), '.')||d.住院单位 as 用量,a.用法
   , c.首次时间 as 日期, b.执行频次, b.频率次数, b.首日数次, f.名称 as 科室, b.姓名||decode(b.婴儿,0,'','【婴】') as 姓名, a.年龄, e.住院号, b.医生嘱托, b.开始执行时间
   from 药品收发记录 a,病人医嘱记录 b ,药品规格 d,病案主页 e,部门表 f,病人医嘱发送 c, 收费项目目录 g, 收费项目别名 h, 药品目录 i, 医嘱执行时间 j
@@ -167,9 +168,9 @@ left join drugbag_rec on temp_origin_temporary.执行频次 = drugbag_rec.执行频率
 order by temp_origin_temporary.床号 asc, temp_origin_temporary.病人id asc, temp_origin_temporary.日期 asc, drugbag_rec.匹配 desc, temp_origin_temporary.药品id
 ) def
 ) ww
-order by ww.床号0 asc, ww.病人id asc, to_char(ww.日期, 'yyyy-mm-dd') asc, ww.匹配 desc, ww.药品id asc
+order by ww.床号0 asc, ww.病人id asc, to_char(ww.日期, 'yyyy-mm-dd') asc, case when ww.医生嘱托 is not null then ww.药品id || ww.医生嘱托 else '' end, ww.匹配 desc, ww.药品id asc
 ) zz
-order by zz.床号0 asc, zz.病人id asc, to_char(zz.日期, 'yyyy-mm-dd') asc, zz.匹配 desc, zz.药品id asc
+order by zz.床号0 asc, zz.病人id asc, to_char(zz.日期, 'yyyy-mm-dd') asc, zz.嘱托换页, zz.匹配 desc, zz.药品id asc
 ) xxx
 
 
@@ -179,17 +180,17 @@ union all
 
 /* 每袋合计多少粒？ */
 select yyy.科室, yyy.床号, yyy.住院号, yyy.姓名, yyy.服药日期, yyy.服药时间, null as 医嘱, null as 规格, '本袋共 ' || sum(yyy.用量0) || ' 粒' as 用法, null as 执行频次, null as 频率次数
-, null as 用量, null as 医生嘱托, yyy.床号0, yyy.病人id, null as 首次, yyy.换页标识, 9999999 as 药品id
+, null as 用量, null as 医生嘱托, yyy.床号0, yyy.病人id, null as 首次, yyy.嘱托换页, yyy.换页标识, 9999999 as 药品id
 , yyy.匹配 from (
 --计算实际换页标识。
-select zz.科室, zz.床号, zz.住院号, zz.姓名, zz.服药日期, zz.服药时间, zz.医嘱, zz.规格, zz.用法, zz.执行频次, zz.频率次数, zz.用量0, zz.用量, zz.医生嘱托, zz.床号0, zz.病人id, zz.首次
-, zz.病人id || '/' || to_char(zz.日期, 'yyyy-mm-dd') || '/' || zz.匹配 || '/' || decode(zz.医生嘱托, null, 'null', '', '空字符串', zz.医生嘱托) || '/' || trunc(zz.该药袋第几种药 / 6) as 换页标识, zz.药品id
+select zz.科室, zz.床号, zz.住院号, zz.姓名, zz.服药日期, zz.服药时间, zz.医嘱, zz.规格, zz.用法, zz.执行频次, zz.频率次数, zz.用量0, zz.用量, zz.医生嘱托, zz.床号0, zz.病人id, zz.首次, zz.嘱托换页
+, zz.病人id || '/' || to_char(zz.日期, 'yyyy-mm-dd') || '/' || zz.匹配 || '/' || zz.嘱托换页 || '/' || trunc(zz.该药袋第几种药 / 6) as 换页标识, zz.药品id
 , zz.匹配 from (
 --计算原本药袋有多少种药。
 select ww.科室, ww.床号, ww.住院号, ww.姓名, ww.服药日期, ww.服药时间, ww.医嘱, ww.规格, ww.用法, ww.执行频次, ww.频率次数, ww.用量, ww.医生嘱托, ww.床号0, ww.病人id, ww.首次
-, ww.药品id, ww.用量0
-, ww.日期, ww.匹配, row_number() over(partition by ww.床号0, ww.病人id, to_char(ww.日期, 'yyyy-mm-dd'), ww.匹配
- order by ww.床号0 asc, ww.病人id asc, to_char(ww.日期, 'yyyy-mm-dd') asc, ww.匹配 desc, ww.药品id asc) as 该药袋第几种药 from (
+, ww.药品id, ww.用量0, case when ww.医生嘱托 is not null then ww.药品id || ww.医生嘱托 else '' end as 嘱托换页
+, ww.日期, ww.匹配, row_number() over(partition by ww.床号0, ww.病人id, to_char(ww.日期, 'yyyy-mm-dd'), case when ww.医生嘱托 is not null then ww.药品id || ww.医生嘱托 else '' end, ww.匹配
+ order by ww.床号0 asc, ww.病人id asc, to_char(ww.日期, 'yyyy-mm-dd') asc, case when ww.医生嘱托 is not null then ww.药品id || ww.医生嘱托 else '' end, ww.匹配 desc, ww.药品id asc) as 该药袋第几种药 from (
 --★★★长嘱必定打印药袋★★★
 select * from (
 select 
@@ -198,11 +199,11 @@ select
   , RPAD('服药日期: ' || to_char(temp_origin_continuous.日期, 'yyyy-mm-dd'), 30, ' ') as 服药日期, '服药时间: ' || drugbag_rec.时点 as 服药时间
   , temp_origin_continuous.医嘱, temp_origin_continuous.规格, temp_origin_continuous.用法, temp_origin_continuous.执行频次, temp_origin_continuous.频率次数
   , temp_origin_continuous.用量0, temp_origin_continuous.用量, temp_origin_continuous.医生嘱托
-  , temp_origin_continuous.床号 as 床号0, temp_origin_continuous.病人id, temp_origin_continuous.日期, drugbag_rec.匹配, drugbag_rec.首次, temp_origin_continuous.药品id
+  , cast(regexp_replace(temp_origin_continuous.床号, '[^0-9]', '') as numeric) as 床号0, temp_origin_continuous.病人id, temp_origin_continuous.日期, drugbag_rec.匹配, drugbag_rec.首次, temp_origin_continuous.药品id
   , temp_origin_continuous.开始执行时间
 from (
 --源数据集
-select distinct i.规格, a.库房id, a.药品id, a.医嘱id, zl_to_number(e.出院病床) as 床号, e.病人id, e.主页id, NVL(h.名称, g.名称) as 医嘱
+select distinct i.规格, a.库房id, a.药品id, a.医嘱id, e.出院病床 as 床号, e.病人id, e.主页id, NVL(h.名称, g.名称) as 医嘱
   , RTRIM(to_char(b.单次用量/d.剂量系数,'fm990.99999'), '.') as 用量0, RTRIM(to_char(b.单次用量/d.剂量系数,'fm990.99999'), '.')||d.住院单位 as 用量,a.用法
   , c.首次时间 as 日期, b.执行频次, b.频率次数, b.首日数次, f.名称 as 科室, b.姓名||decode(b.婴儿,0,'','【婴】') as 姓名, a.年龄, e.住院号, b.医生嘱托, b.开始执行时间
   from 药品收发记录 a,病人医嘱记录 b ,药品规格 d,病案主页 e,部门表 f,病人医嘱发送 c, 收费项目目录 g, 收费项目别名 h, 药品目录 i
@@ -262,11 +263,11 @@ select
   , RPAD('服药日期: ' || to_char(temp_origin_temporary.日期, 'yyyy-mm-dd'), 30, ' ') as 服药日期, '服药时间: ' || drugbag_rec.时点 as 服药时间
   , temp_origin_temporary.医嘱, temp_origin_temporary.规格, temp_origin_temporary.用法, temp_origin_temporary.执行频次, temp_origin_temporary.频率次数
   , temp_origin_temporary.用量0, temp_origin_temporary.用量, temp_origin_temporary.医生嘱托
-  , temp_origin_temporary.床号 as 床号0, temp_origin_temporary.病人id, temp_origin_temporary.日期, drugbag_rec.匹配, drugbag_rec.首次, temp_origin_temporary.药品id
+  , cast(regexp_replace(temp_origin_temporary.床号, '[^0-9]', '') as numeric) as 床号0, temp_origin_temporary.病人id, temp_origin_temporary.日期, drugbag_rec.匹配, drugbag_rec.首次, temp_origin_temporary.药品id
   , temp_origin_temporary.开始执行时间
 from (
 --源数据集
-select distinct i.规格, a.库房id, a.药品id, a.医嘱id, zl_to_number(e.出院病床) as 床号, e.病人id, e.主页id, NVL(h.名称, g.名称) as 医嘱
+select distinct i.规格, a.库房id, a.药品id, a.医嘱id, e.出院病床 as 床号, e.病人id, e.主页id, NVL(h.名称, g.名称) as 医嘱
   , RTRIM(to_char(b.单次用量/d.剂量系数,'fm990.99999'), '.') as 用量0, RTRIM(to_char(b.单次用量/d.剂量系数,'fm990.99999'), '.')||d.住院单位 as 用量,a.用法
   , c.首次时间 as 日期, b.执行频次, b.频率次数, b.首日数次, f.名称 as 科室, b.姓名||decode(b.婴儿,0,'','【婴】') as 姓名, a.年龄, e.住院号, b.医生嘱托, b.开始执行时间
   from 药品收发记录 a,病人医嘱记录 b ,药品规格 d,病案主页 e,部门表 f,病人医嘱发送 c, 收费项目目录 g, 收费项目别名 h, 药品目录 i, 医嘱执行时间 j
@@ -328,12 +329,12 @@ left join drugbag_rec on temp_origin_temporary.执行频次 = drugbag_rec.执行频率
 order by temp_origin_temporary.床号 asc, temp_origin_temporary.病人id asc, temp_origin_temporary.日期 asc, drugbag_rec.匹配 desc, temp_origin_temporary.药品id
 ) def
 ) ww
-order by ww.床号0 asc, ww.病人id asc, to_char(ww.日期, 'yyyy-mm-dd') asc, ww.匹配 desc, ww.药品id asc
+order by ww.床号0 asc, ww.病人id asc, to_char(ww.日期, 'yyyy-mm-dd') asc, case when ww.医生嘱托 is not null then ww.药品id || ww.医生嘱托 else '' end, ww.匹配 desc, ww.药品id asc
 ) zz
-order by zz.床号0 asc, zz.病人id asc, to_char(zz.日期, 'yyyy-mm-dd') asc, zz.匹配 desc, zz.药品id asc
+order by zz.床号0 asc, zz.病人id asc, to_char(zz.日期, 'yyyy-mm-dd') asc, zz.嘱托换页, zz.匹配 desc, zz.药品id asc
 ) yyy
-group by yyy.科室, yyy.床号, yyy.住院号, yyy.姓名, yyy.服药日期, yyy.服药时间, yyy.床号0, yyy.病人id, yyy.服药日期, yyy.匹配, yyy.换页标识
+group by yyy.科室, yyy.床号, yyy.住院号, yyy.姓名, yyy.服药日期, yyy.服药时间, yyy.床号0, yyy.病人id, yyy.服药日期, yyy.嘱托换页, yyy.匹配, yyy.换页标识
 ) zzzz
 where zzzz.医嘱 not like '%肠内营养液%'
 or zzzz.医嘱 is null
-order by zzzz.床号0 asc, zzzz.病人id asc, zzzz.服药日期 asc, zzzz.匹配 desc, zzzz.换页标识, zzzz.药品id asc
+order by zzzz.床号0 asc, zzzz.病人id asc, zzzz.服药日期 asc, zzzz.嘱托换页, zzzz.匹配 desc, zzzz.换页标识, zzzz.药品id asc
